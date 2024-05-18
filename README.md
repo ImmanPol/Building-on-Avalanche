@@ -1,109 +1,192 @@
-# DegenToken Smart Contract
+# KTokens Smart Contract
 
 ## Overview
 
-The DegenToken smart contract is an ERC20-based token deployed on the Ethereum blockchain. It allows the owner to mint new tokens and provides functionalities for transferring, redeeming, and burning tokens. The contract also includes a shop with items that can be redeemed using tokens.
+KTokens is a custom ERC20 token with additional functionalities including staking, item redemption, and administrative controls for minting, pausing, and emergency withdrawal. This contract is built using Solidity and leverages OpenZeppelin libraries for secure and standardized implementations.
 
 ## Features
 
-1. **Minting New Tokens**: The owner can mint new tokens and distribute them to specified addresses.
-2. **Transferring Tokens**: Users can transfer tokens to other addresses.
-3. **Redeeming Tokens**: Users can redeem tokens for items listed in the shop.
-4. **Burning Tokens**: Users can burn their tokens to remove them from circulation.
-5. **Checking Token Balance**: Users can check their token balance.
+- **Minting**: The owner can mint new tokens.
+- **Transferring**: Standard ERC20 transfer functionality with additional checks.
+- **Redeeming Items**: Users can redeem tokens for in-game items.
+- **Burning**: Users can burn their tokens.
+- **Staking**: Users can stake their tokens to earn rewards.
+- **Pausing**: The contract can be paused and unpaused by the owner.
+- **Emergency Withdrawal**: The owner can withdraw all tokens from the contract in case of emergency.
+- **Item Management**: The owner can add, update, and remove items from the shop.
 
 ## Contract Details
 
-### Variables
-
-- `mapping(uint256 => uint256) public productpricesList`: Stores the prices of items available for redemption in the shop.
-
 ### Constructor
 
+The constructor initializes the contract by minting an initial supply of tokens to the deployer and setting up the reward rate and initial shop items.
+
 ```solidity
-constructor(address initialOwner) ERC20("DegenToken", "DGN") Ownable(initialOwner) {
-    productpricesList[1] = 50;
-    productpricesList[2] = 100;
-    productpricesList[3] = 200;
-    productpricesList[4] = 10;
+constructor(address initialOwner) ERC20("Degen", "DGN") Ownable(initialOwner) {
+    _mint(msg.sender, 10 * 10 ** decimals());
+    rewardRate = 100; // Example reward rate
+    nextItemId = 1;
+    addItem("Rare Sword", 50);
+    addItem("Legendary Armor", 100);
+    addItem("Epic Potion", 200);
+    addItem("Common Scroll", 10);
 }
 ```
 
-The constructor initializes the token with the name "DegenToken" and symbol "DGN". It also sets the initial prices for shop items.
+### Minting
 
-### Functions
-
-- `mintCoin(address account, uint256 amount) public onlyOwner`: Allows the owner to mint new tokens to a specified address.
-  
-- `transferCoin(address recipient, uint256 amount) public virtual returns (bool)`: Allows a user to transfer tokens to another address.
-
-- `listShopItems() external pure returns (string memory)`: Returns a list of items available in the shop along with their prices.
-
-- `redeemCoin(uint256 _item) public`: Allows a user to redeem tokens for an item. The function checks if the item is available and if the user has sufficient balance.
-
-- `burnCoin(uint256 amount) public`: Allows a user to burn a specified amount of their tokens.
-
-- `getBalance() external view returns (uint256)`: Returns the balance of the caller.
-
-## Usage
-
-### Deploying the Contract
-
-To deploy the contract, you need to provide the address of the initial owner. This owner will have the ability to mint new tokens.
+Allows the owner to mint new tokens.
 
 ```solidity
-constructor(address initialOwner)
+function mint(address account, uint256 amount) public onlyOwner whenNotPaused {
+    _mint(account, amount);
+}
 ```
 
-### Minting Tokens
+### Transferring
 
-Only the owner can mint new tokens. The minted tokens can be distributed to any address.
+Standard ERC20 transfer with an additional check for paused state.
 
 ```solidity
-mintCoin(address account, uint256 amount)
+function transfer(address recipient, uint256 amount) public virtual override onlyWhenNotPaused returns (bool) {
+    require(amount <= balanceOf(msg.sender), "Insufficient balance");
+    _transfer(msg.sender, recipient, amount);
+    return true;
+}
 ```
 
-### Transferring Tokens
+### Redeeming Items
 
-Users can transfer tokens to other addresses using the `transferCoin` function.
+Users can redeem their tokens for items listed in the shop.
 
 ```solidity
-transferCoin(address recipient, uint256 amount)
+function redeem(uint256 itemId) public nonReentrant whenNotPaused {
+    Item memory item = shopItems[itemId];
+    require(item.price > 0, "Item does not exist");
+    require(balanceOf(msg.sender) >= item.price, "Insufficient balance to redeem item");
+    _burn(msg.sender, item.price);
+    // Logic to transfer item to user can be added here
+}
 ```
 
-### Redeeming Tokens
+### Burning
 
-Users can redeem their tokens for items listed in the shop. The `redeemCoin` function checks if the item is available and if the user has enough balance to redeem it.
+Users can burn their tokens.
 
 ```solidity
-redeemCoin(uint256 _item)
+function burn(uint256 amount) public whenNotPaused {
+    require(amount <= balanceOf(msg.sender), "Insufficient balance");
+    _burn(msg.sender, amount);
+}
 ```
 
-### Burning Tokens
+### Staking
 
-Users can burn their tokens to remove them from circulation.
+Users can stake their tokens to earn rewards.
 
 ```solidity
-burnCoin(uint256 amount)
+function stake(uint256 amount) public whenNotPaused {
+    require(amount <= balanceOf(msg.sender), "Insufficient balance to stake");
+    _transfer(msg.sender, address(this), amount);
+    stakedBalances[msg.sender] = stakedBalances[msg.sender].add(amount);
+    stakingRewards[msg.sender] = stakingRewards[msg.sender].add(amount.mul(rewardRate).div(10000));
+}
 ```
 
-### Checking Balance
+### Unstaking
 
-Users can check their token balance using the `getBalance` function.
+Users can unstake their tokens.
 
 ```solidity
-getBalance()
+function unstake(uint256 amount) public nonReentrant whenNotPaused {
+    require(stakedBalances[msg.sender] >= amount, "Insufficient staked balance");
+    stakedBalances[msg.sender] = stakedBalances[msg.sender].sub(amount);
+    _transfer(address(this), msg.sender, amount);
+}
 ```
 
-## Shop Items
+### Claiming Rewards
 
-The shop contains the following items:
+Users can claim their staking rewards.
 
-1. Rare Sword - 50 DGN
-2. Legendary Armor - 100 DGN
-3. Epic Potion - 200 DGN
-4. Common Scroll - 10 DGN
+```solidity
+function claimRewards() public nonReentrant whenNotPaused {
+    uint256 reward = stakingRewards[msg.sender];
+    require(reward > 0, "No rewards to claim");
+    stakingRewards[msg.sender] = 0;
+    _mint(msg.sender, reward);
+}
+```
 
-## Contributor
+### Pausing
 
-Immanuel George V. Pollente
+The owner can pause and unpause the contract.
+
+```solidity
+function pause() public onlyOwner {
+    _pause();
+}
+
+function unpause() public onlyOwner {
+    _unpause();
+}
+```
+
+### Emergency Withdrawal
+
+The owner can withdraw all tokens from the contract in case of an emergency.
+
+```solidity
+function emergencyWithdraw() public onlyOwner {
+    uint256 contractBalance = balanceOf(address(this));
+    _transfer(address(this), owner(), contractBalance);
+}
+```
+
+### Item Management
+
+The owner can add, update, and remove items from the shop.
+
+```solidity
+function addItem(string memory name, uint256 price) public onlyOwner {
+    shopItems[nextItemId] = Item(name, price);
+    nextItemId++;
+}
+
+function updateItem(uint256 itemId, string memory name, uint256 price) public onlyOwner {
+    require(shopItems[itemId].price > 0, "Item does not exist");
+    shopItems[itemId] = Item(name, price);
+}
+
+function removeItem(uint256 itemId) public onlyOwner {
+    require(shopItems[itemId].price > 0, "Item does not exist");
+    delete shopItems[itemId];
+}
+```
+
+### Get Balance
+
+Allows users to get their token balance.
+
+```solidity
+function getBalance() external view returns (uint256) {
+    return balanceOf(msg.sender);
+}
+```
+
+## How to Use
+
+1. **Deploy the Contract**: Deploy the contract to a blockchain network with the initial owner address.
+2. **Minting Tokens**: The owner can mint new tokens using the `mint` function.
+3. **Transferring Tokens**: Users can transfer tokens to other addresses using the `transfer` function.
+4. **Staking and Unstaking**: Users can stake their tokens to earn rewards and unstake them when needed.
+5. **Claiming Rewards**: Users can claim their staking rewards.
+6. **Redeeming Items**: Users can redeem their tokens for items listed in the shop.
+7. **Pausing the Contract**: The owner can pause and unpause the contract.
+8. **Emergency Withdrawal**: The owner can perform an emergency withdrawal of all tokens from the contract.
+
+## Security Considerations
+
+- The contract includes reentrancy guards to prevent reentrancy attacks.
+- SafeMath is used to prevent overflow and underflow issues.
+- The contract can be paused in case of emergencies.

@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract DegenToken is ERC20, Ownable {
+    mapping(uint256 => uint256) public productpricesList;
+
+    constructor(address initialOwner) ERC20("DegenToken", "DGN") Ownable(initialOwner) {
+    productpricesList[1] = 50;
+    productpricesList[2] = 100;
+    productpricesList[3] = 200;
+    productpricesList[4] = 10;
+}
+
+    function mintCoin(address account, uint256 amount) public onlyOwner {
+        _mint(account, amount);
+    }
+
+   function transferCoin(address recipient, uint256 amount) public virtual returns (bool) {
+    require(amount <= balanceOf(msg.sender), "Insufficient balance");
+    _transfer(msg.sender, recipient, amount);
+    return true;
+}
+
+    function listShopItems() external pure returns (string memory) {
+        return "Available items: {1} Rare Sword (50) {2} Legendary Armor (100) {3} Epic Potion (200) {4} Common Scroll (10)";
+    }
+
+    function redeemCoin(uint256 _item) public {
+        require(productpricesList[_item] > 0 && _item <= 4, "Item is not available right now.");
+        require(balanceOf(msg.sender) >= productpricesList[_item], "Redeem Failed: Your balance in insufficinet.");
+        transfer(owner(), productpricesList[_item]);
+    }
+
+    function burnCoin(uint256 amount) public {
+        require(amount <= balanceOf(msg.sender), "Your balance in insufficinet");
+        _burn(msg.sender, amount);
+    }
+
+    function getBalance() external view returns (uint256) {
+        return balanceOf(msg.sender);
+    }
+}
